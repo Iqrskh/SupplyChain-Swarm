@@ -26,37 +26,108 @@ st.set_page_config(
 
 @st.cache_data
 def load_data():
-    return pd.read_csv(
-        "data/raw/supply_chain_data.csv"
+
+    df = pd.read_csv(
+        "data/raw/supply_chain_dataset1.csv"
     )
+
+    # Convert date
+    if "Date" in df.columns:
+        df["Date"] = pd.to_datetime(
+            df["Date"],
+            errors="coerce"
+        )
+
+    return df
 
 
 data = load_data()
 
 
 # =========================================================
-# SUPPLIERS
+# DATA VALIDATION
 # =========================================================
 
-suppliers = {
-    "Supplier_A": {
-        "unit_cost": 500,
-        "lead_time": 4,
-        "reliability": 0.95
-    },
+required_columns = [
+    "Date",
+    "SKU_ID",
+    "Warehouse_ID",
+    "Supplier_ID",
+    "Region",
+    "Units_Sold",
+    "Inventory_Level",
+    "Supplier_Lead_Time_Days",
+    "Reorder_Point",
+    "Order_Quantity",
+    "Unit_Cost",
+    "Unit_Price",
+    "Promotion_Flag",
+    "Stockout_Flag",
+    "Demand_Forecast"
+]
 
-    "Supplier_B": {
-        "unit_cost": 470,
-        "lead_time": 6,
-        "reliability": 0.88
-    },
+missing_columns = [
+    column
+    for column in required_columns
+    if column not in data.columns
+]
 
-    "Supplier_C": {
-        "unit_cost": 530,
-        "lead_time": 3,
-        "reliability": 0.97
+if missing_columns:
+
+    st.error(
+        "The dataset is missing required columns:"
+    )
+
+    st.write(missing_columns)
+
+    st.stop()
+
+
+# =========================================================
+# DATASET-DRIVEN SUPPLIERS
+# =========================================================
+
+supplier_summary = (
+    data
+    .groupby("Supplier_ID")
+    .agg(
+        unit_cost=("Unit_Cost", "mean"),
+        lead_time=("Supplier_Lead_Time_Days", "mean"),
+        stockout_rate=("Stockout_Flag", "mean")
+    )
+    .reset_index()
+)
+
+
+suppliers = {}
+
+
+for _, row in supplier_summary.iterrows():
+
+    supplier_id = str(row["Supplier_ID"])
+
+    # Stockout rate is used as a reliability-risk proxy.
+    # The dataset does not directly provide supplier reliability.
+    reliability_proxy = (
+        1 - float(row["stockout_rate"])
+    )
+
+    suppliers[supplier_id] = {
+
+        "unit_cost":
+            float(row["unit_cost"]),
+
+        "lead_time":
+            int(round(row["lead_time"])),
+
+        "reliability":
+            reliability_proxy
     }
-}
+
+
+supplier_names = sorted(
+    suppliers.keys()
+)
 
 
 # =========================================================
@@ -69,9 +140,14 @@ with st.sidebar:
 
     st.divider()
 
+    # Product selection using SKU_ID
     product = st.selectbox(
         "📦 Select Product",
-        sorted(data["product"].unique())
+        sorted(
+            data["SKU_ID"]
+            .astype(str)
+            .unique()
+        )
     )
 
     scenario = st.selectbox(
@@ -137,8 +213,40 @@ st.divider()
 # =========================================================
 
 product_data = data[
-    data["product"] == product
+    data["SKU_ID"].astype(str) == str(product)
 ].copy()
+
+
+# Sort by date for time-series forecasting
+product_data = product_data.sort_values(
+    by="Date"
+).reset_index(drop=True)
+
+
+# =========================================================
+# SCENARIO SUPPLIER SELECTION
+# =========================================================
+
+# Use actual suppliers from the dataset.
+# No artificial Supplier_A/B/C names are created.
+
+delay_supplier = None
+cost_supplier = None
+
+
+if supplier_names:
+
+    # Supplier with shortest average lead time
+    delay_supplier = min(
+        supplier_names,
+        key=lambda name: suppliers[name]["lead_time"]
+    )
+
+    # Supplier with lowest average unit cost
+    cost_supplier = min(
+        supplier_names,
+        key=lambda name: suppliers[name]["unit_cost"]
+    )
 
 
 # =========================================================
@@ -150,38 +258,50 @@ environment = SupplyChainEnvironment()
 
 if scenario == "Demand Shock":
 
-    environment.apply_demand_shock(40)
+    environment.apply_demand_shock(
+        40
+    )
 
 
 elif scenario == "Supplier Delay":
 
-    environment.apply_supplier_delay(
-        "Supplier_A",
-        5
-    )
+    if delay_supplier:
+
+        environment.apply_supplier_delay(
+            delay_supplier,
+            5
+        )
 
 
 elif scenario == "Cost Increase":
 
-    environment.apply_cost_increase(
-        "Supplier_C",
-        20
-    )
+    if cost_supplier:
+
+        environment.apply_cost_increase(
+            cost_supplier,
+            20
+        )
 
 
 elif scenario == "Combined Crisis":
 
-    environment.apply_demand_shock(40)
-
-    environment.apply_supplier_delay(
-        "Supplier_A",
-        5
+    environment.apply_demand_shock(
+        40
     )
 
-    environment.apply_cost_increase(
-        "Supplier_C",
-        20
-    )
+    if delay_supplier:
+
+        environment.apply_supplier_delay(
+            delay_supplier,
+            5
+        )
+
+    if cost_supplier:
+
+        environment.apply_cost_increase(
+            cost_supplier,
+            20
+        )
 
 
 # =========================================================
@@ -191,20 +311,46 @@ elif scenario == "Combined Crisis":
 coordinator = CoordinatorAgent()
 
 
-result = coordinator.run(
-    product_data,
-    suppliers,
-    environment
-)
+try:
 
+    result = coordinator.run(
+        product_data,
+        suppliers,
+        environment
+    )
+
+    system_error = ""
+
+except Exception as e:
+
+    result = None
+
+    system_error = str(e)
+
+
+if result is None:
+
+    st.error(
+        "The Agentic AI system could not complete the simulation."
+    )
+
+    st.code(system_error)
+
+    st.stop()
+
+
+# =========================================================
+# EXTRACT RESULTS
+# =========================================================
 
 inventory = result["inventory"]
 
 procurement = result["procurement"]
 
 
+# ProcurementAgent returns "supplier"
 selected_supplier = procurement.get(
-    "selected_supplier",
+    "supplier",
     "N/A"
 )
 
@@ -220,7 +366,7 @@ estimated_cost = procurement.get(
 
 
 # =========================================================
-# LLM
+# LLM EXPLANATION
 # =========================================================
 
 try:
@@ -248,7 +394,7 @@ except Exception as e:
 
 
 # =========================================================
-# RAG
+# RAG QUERY
 # =========================================================
 
 rag_query = (
@@ -257,6 +403,10 @@ rag_query = (
     f"supplier evaluation, procurement, and crisis management."
 )
 
+
+# =========================================================
+# RAG RETRIEVAL
+# =========================================================
 
 try:
 
@@ -288,15 +438,24 @@ scenario_descriptions = {
         "Customer demand has increased by 40%.",
 
     "Supplier Delay":
-        "Supplier A is experiencing a 5-day delivery delay.",
+        (
+            f"{delay_supplier} is experiencing "
+            "a 5-day delivery delay."
+        ),
 
     "Cost Increase":
-        "Supplier C's cost has increased by 20%.",
+        (
+            f"{cost_supplier}'s cost has increased "
+            "by 20%."
+        ),
 
     "Combined Crisis":
-        "Demand increased by 40%, Supplier A has a "
-        "5-day delay, and Supplier C's cost increased "
-        "by 20%."
+        (
+            f"Demand increased by 40%, "
+            f"{delay_supplier} has a 5-day delay, "
+            f"and {cost_supplier}'s cost increased "
+            "by 20%."
+        )
 }
 
 
@@ -306,12 +465,12 @@ scenario_descriptions = {
 
 st.info(
     f"""
-    **Current Scenario:** {scenario}
+**Current Scenario:** {scenario}
 
-    **Product:** {product}
+**Product / SKU:** {product}
 
-    {scenario_descriptions[scenario]}
-    """
+{scenario_descriptions[scenario]}
+"""
 )
 
 
@@ -362,16 +521,16 @@ with col4:
 
 st.success(
     f"""
-    🎯 **Procurement Recommendation**
+🎯 **Procurement Recommendation**
 
-    Supplier: **{selected_supplier}**
+Supplier: **{selected_supplier}**
 
-    Order Quantity: **{order_quantity} units**
+Order Quantity: **{order_quantity} units**
 
-    Estimated Cost: **₹{estimated_cost:,.2f}**
+Estimated Cost: **₹{estimated_cost:,.2f}**
 
-    👤 Human review required before real-world action.
-    """
+👤 Human review required before real-world action.
+"""
 )
 
 
@@ -408,11 +567,11 @@ with tab1:
 
         st.info(
             """
-            ### 📈 Demand Agent
+### 📈 Demand Agent
 
-            Forecasts future demand
-            using historical data.
-            """
+Forecasts future demand
+using historical data.
+"""
         )
 
 
@@ -420,11 +579,11 @@ with tab1:
 
         st.info(
             """
-            ### 📦 Inventory Agent
+### 📦 Inventory Agent
 
-            Calculates safety stock,
-            reorder point and stockout risk.
-            """
+Calculates safety stock,
+reorder point and stockout risk.
+"""
         )
 
 
@@ -432,11 +591,11 @@ with tab1:
 
         st.info(
             """
-            ### 🏭 Supplier Agent
+### 🏭 Supplier Agent
 
-            Evaluates supplier cost,
-            lead time and reliability.
-            """
+Evaluates supplier cost,
+lead time and reliability proxy.
+"""
         )
 
 
@@ -447,11 +606,11 @@ with tab1:
 
         st.info(
             """
-            ### 🛒 Procurement Agent
+### 🛒 Procurement Agent
 
-            Generates the structured
-            procurement recommendation.
-            """
+Generates the structured
+procurement recommendation.
+"""
         )
 
 
@@ -459,11 +618,11 @@ with tab1:
 
         st.info(
             """
-            ### 📚 RAG Layer
+### 📚 RAG Layer
 
-            Retrieves relevant
-            supply-chain policies.
-            """
+Retrieves relevant
+supply-chain policies.
+"""
         )
 
 
@@ -471,11 +630,11 @@ with tab1:
 
         st.info(
             """
-            ### 🧠 Llama 3.2
+### 🧠 Llama 3.2
 
-            Generates a grounded
-            natural-language explanation.
-            """
+Generates a grounded
+natural-language explanation.
+"""
         )
 
 
@@ -493,7 +652,7 @@ with tab1:
 
             "Scenario",
 
-            "Product",
+            "Product / SKU",
 
             "Adjusted Demand",
 
@@ -534,7 +693,7 @@ with tab1:
 
     st.dataframe(
         overview_df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True
     )
 
@@ -636,7 +795,7 @@ with tab2:
 
         st.dataframe(
             rag_df,
-            use_container_width=True,
+            width="stretch",
             hide_index=True
         )
 
@@ -696,7 +855,6 @@ with tab2:
             result
         )
 
-
         st.write(
             rag_answer
         )
@@ -723,28 +881,31 @@ with tab2:
 
     st.info(
         """
-        **Human-in-the-loop architecture**
+**Human-in-the-loop architecture**
 
-        • AI outputs are simulated decision-support results.
+• AI outputs are simulated decision-support results.
 
-        • Numerical decisions are generated by
-        specialized supply-chain agents.
+• Numerical decisions are generated by
+specialized supply-chain agents.
 
-        • The LLM explains the results rather than
-        replacing the decision logic.
+• The LLM explains the results rather than
+replacing the decision logic.
 
-        • RAG provides project-specific knowledge.
+• RAG provides project-specific knowledge.
 
-        • Retrieved knowledge sources are visible.
+• Retrieved knowledge sources are visible.
 
-        • The system is instructed not to invent
-        supplier, cost, inventory or policy information.
+• The system is instructed not to invent
+supplier, cost, inventory or policy information.
 
-        • No real procurement transaction is
-        automatically executed.
+• Supplier reliability is represented using a
+dataset-derived stockout-rate proxy.
 
-        • Final business decisions require human review.
-        """
+• No real procurement transaction is
+automatically executed.
+
+• Final business decisions require human review.
+"""
     )
 
 
@@ -802,7 +963,7 @@ with tab3:
 
     st.dataframe(
         inventory_df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True
     )
 
@@ -865,8 +1026,8 @@ with tab4:
                 "Lead Time":
                     f"{item['lead_time']} days",
 
-                "Reliability":
-                    f"{item['reliability'] * 100:.0f}%",
+                "Reliability Proxy":
+                    f"{item['reliability'] * 100:.2f}%",
 
                 "Risk Score":
                     item["risk_score"],
@@ -886,8 +1047,15 @@ with tab4:
 
     st.dataframe(
         supplier_df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True
+    )
+
+
+    st.caption(
+        "Reliability Proxy = 1 − observed supplier stockout rate "
+        "in the dataset. It is used as a risk-analysis proxy, "
+        "not as a direct supplier reliability measurement."
     )
 
 
@@ -964,13 +1132,13 @@ with tab4:
                 supplier_name,
 
             "Unit Cost":
-                cost,
+                round(cost, 2),
 
             "Lead Time":
                 lead_time,
 
-            "Reliability":
-                reliability * 100,
+            "Reliability Proxy":
+                round(reliability * 100, 2),
 
             "Decision Score":
                 round(
@@ -988,7 +1156,7 @@ with tab4:
 
     st.dataframe(
         score_df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True
     )
 
@@ -1023,7 +1191,7 @@ with tab5:
             "3️⃣",
             "Supplier Agent",
             "Evaluates supplier cost, lead time, "
-            "reliability and risk."
+            "reliability proxy and risk."
         ),
 
         (
@@ -1095,17 +1263,17 @@ with tab5:
 
         "Role": [
 
-            "Demand forecasting",
+            "Random Forest demand forecasting",
 
             "Coordinates specialized supply-chain agents",
 
-            "Llama 3.2 explains system results",
+            "Llama 3.2 through Ollama",
 
             "Generates natural-language explanations",
 
-            "Retrieves project-specific policies",
+            "Retrieves project-specific policy knowledge",
 
-            "Runs Llama 3.2 through Ollama",
+            "Runs Llama 3.2 locally",
 
             "Grounding, transparency and human review"
 
@@ -1116,7 +1284,7 @@ with tab5:
 
     st.dataframe(
         component_df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True
     )
 
@@ -1125,66 +1293,115 @@ with tab5:
 
 
     st.subheader(
-        "📌 System Status"
+        "📊 Dataset Information"
     )
 
 
-    a, b, c, d = st.columns(4)
+    dataset_info = pd.DataFrame({
+
+        "Property": [
+
+            "Dataset File",
+
+            "Rows",
+
+            "Columns",
+
+            "Product Identifier",
+
+            "Supplier Identifier",
+
+            "Demand Column",
+
+            "Inventory Column",
+
+            "Lead Time Column"
+
+        ],
+
+        "Value": [
+
+            "supply_chain_dataset1.csv",
+
+            f"{len(data):,}",
+
+            len(data.columns),
+
+            "SKU_ID",
+
+            "Supplier_ID",
+
+            "Units_Sold",
+
+            "Inventory_Level",
+
+            "Supplier_Lead_Time_Days"
+
+        ]
+
+    })
 
 
-    with a:
+    st.dataframe(
+        dataset_info,
+        width="stretch",
+        hide_index=True
+    )
+
+
+    st.divider()
+
+
+    st.subheader(
+        "🟢 System Status"
+    )
+
+
+    status1, status2, status3 = st.columns(3)
+
+
+    with status1:
 
         st.success(
-            "✅ Agents Running"
+            "Dataset Loaded"
         )
 
 
-    with b:
+    with status2:
 
         if llm_ok:
 
             st.success(
-                "✅ Local LLM Connected"
+                "Llama 3.2 Connected"
             )
 
         else:
 
             st.warning(
-                "⚠️ LLM Unavailable"
+                "Llama 3.2 Unavailable"
             )
 
 
-    with c:
+    with status3:
 
         if retrieved_documents:
 
             st.success(
-                "✅ RAG Retrieval Active"
+                "RAG Knowledge Available"
             )
 
         else:
 
             st.warning(
-                "⚠️ No RAG Sources"
+                "RAG Knowledge Unavailable"
             )
 
 
-    with d:
-
-        st.success(
-            "✅ Simulation Active"
-        )
+    st.divider()
 
 
-# =========================================================
-# FOOTER
-# =========================================================
-
-st.divider()
-
-
-st.caption(
-    "SupplyChain-Swarm | LLM-Powered Agentic AI "
-    "Supply Chain Decision Support System | "
-    "Agentic AI • ML • LLM • RAG • Responsible AI"
-)
+    st.caption(
+        "SupplyChain-Swarm is an academic decision-support "
+        "simulation. Recommendations are simulated and "
+        "must be reviewed by a human before any real-world use."
+    )

@@ -53,23 +53,48 @@ class CoordinatorAgent:
         # 4. GET CURRENT INVENTORY
         # ==========================================
 
-        current_inventory = int(
-            product_data["inventory"].iloc[-1]
-        )
+        if "Inventory_Level" in product_data.columns:
+            current_inventory = int(
+                product_data["Inventory_Level"].iloc[-1]
+            )
+        elif "inventory" in product_data.columns:
+            current_inventory = int(
+                product_data["inventory"].iloc[-1]
+            )
+        else:
+            raise ValueError(
+                "Dataset must contain 'Inventory_Level' "
+                "or 'inventory'."
+            )
 
         # ==========================================
         # 5. DETERMINE LEAD TIME
         # ==========================================
 
-        base_lead_time = int(
-            product_data["lead_time"].iloc[-1]
-        )
+        if "Supplier_Lead_Time_Days" in product_data.columns:
+            base_lead_time = int(
+                product_data[
+                    "Supplier_Lead_Time_Days"
+                ].iloc[-1]
+            )
+        elif "lead_time" in product_data.columns:
+            base_lead_time = int(
+                product_data["lead_time"].iloc[-1]
+            )
+        else:
+            raise ValueError(
+                "Dataset must contain "
+                "'Supplier_Lead_Time_Days' or 'lead_time'."
+            )
 
-        # Find the largest supplier delay
-        # for planning purposes
+        # ==========================================
+        # 6. ACCOUNT FOR SUPPLIER DELAYS
+        # ==========================================
+
         max_delay = 0
 
         if environment:
+
             for changes in environment.supplier_changes.values():
 
                 delay = changes.get(
@@ -87,7 +112,7 @@ class CoordinatorAgent:
         )
 
         # ==========================================
-        # 6. INVENTORY ANALYSIS
+        # 7. INVENTORY ANALYSIS
         # ==========================================
 
         inventory_result = self.inventory_agent.analyze(
@@ -101,7 +126,7 @@ class CoordinatorAgent:
         ]
 
         # ==========================================
-        # 7. PROCUREMENT DECISION
+        # 8. PROCUREMENT DECISION
         # ==========================================
 
         procurement_result = self.procurement_agent.decide(
@@ -110,7 +135,7 @@ class CoordinatorAgent:
         )
 
         # ==========================================
-        # 8. RETURN COMPLETE SWARM RESULT
+        # 9. RETURN COMPLETE SWARM RESULT
         # ==========================================
 
         return {

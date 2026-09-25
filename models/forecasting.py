@@ -17,7 +17,23 @@ class DemandForecaster:
 
         df = df.copy()
 
-        df["date"] = pd.to_datetime(df["date"])
+        # Support the public supply-chain dataset
+        if "Date" in df.columns:
+            df["date"] = pd.to_datetime(df["Date"])
+        elif "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"])
+        else:
+            raise ValueError(
+                "Dataset must contain either 'Date' or 'date' column."
+            )
+
+        # Support the public supply-chain dataset
+        if "Units_Sold" in df.columns:
+            df["demand"] = df["Units_Sold"]
+        elif "demand" not in df.columns:
+            raise ValueError(
+                "Dataset must contain either 'Units_Sold' or 'demand' column."
+            )
 
         # Calendar features
         df["day_of_week"] = df["date"].dt.dayofweek
@@ -65,10 +81,13 @@ class DemandForecaster:
         y_train = y.iloc[:split]
         y_test = y.iloc[split:]
 
+        # Train model
         self.model.fit(X_train, y_train)
 
+        # Predictions
         predictions = self.model.predict(X_test)
 
+        # Evaluation metrics
         mae = mean_absolute_error(
             y_test,
             predictions
