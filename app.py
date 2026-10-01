@@ -1,11 +1,753 @@
 import streamlit as st
 import pandas as pd
+from io import BytesIO
+from datetime import datetime
 
 from agents.coordinator_agent import CoordinatorAgent
 from simulation.environment import SupplyChainEnvironment
 
 from llm_service import explain_supply_chain
 from rag_service import retrieve_documents, answer_with_rag
+
+
+# =========================================================
+# PDF REPORT GENERATION
+# =========================================================
+
+def generate_pdf_report(
+    result,
+    product,
+    scenario,
+    selected_supplier,
+    order_quantity,
+    estimated_cost,
+    llm_explanation,
+    retrieved_documents,
+    review_status,
+    reviewer_comment
+):
+    """
+    Generate the final SupplyChain-Swarm PDF report.
+    The report is available only after human approval.
+    """
+
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import (
+            SimpleDocTemplate,
+            Paragraph,
+            Spacer,
+            Table,
+            TableStyle
+        )
+
+    except ImportError:
+        raise RuntimeError(
+            "ReportLab is not installed. "
+            "Run: pip install reportlab"
+        )
+
+    buffer = BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=15 * mm,
+        leftMargin=15 * mm,
+        topMargin=15 * mm,
+        bottomMargin=15 * mm
+    )
+
+    styles = getSampleStyleSheet()
+
+    story = []
+
+    inventory = result["inventory"]
+
+    procurement = result["procurement"]
+
+    demand = result.get("demand", {})
+
+    report_id = (
+        f"SC-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    )
+
+    generated_at = datetime.now().strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+
+    # =====================================================
+    # TITLE
+    # =====================================================
+
+    story.append(
+        Paragraph(
+            "<b>SupplyChain-Swarm Decision Report</b>",
+            styles["Title"]
+        )
+    )
+
+    story.append(
+        Paragraph(
+            "LLM-Powered Agentic AI Supply Chain "
+            "Decision Support System",
+            styles["Normal"]
+        )
+    )
+
+    story.append(Spacer(1, 15))
+
+    # =====================================================
+    # BASIC INFORMATION
+    # =====================================================
+
+    story.append(
+        Paragraph(
+            "<b>1. Basic Information</b>",
+            styles["Heading2"]
+        )
+    )
+
+    basic_data = [
+        ["Report ID", report_id],
+        ["Generated", generated_at],
+        ["Product / SKU", str(product)],
+        ["Scenario", str(scenario)],
+        ["Review Status", str(review_status)]
+    ]
+
+    basic_table = Table(
+        basic_data,
+        colWidths=[
+            55 * mm,
+            115 * mm
+        ]
+    )
+
+    basic_table.setStyle(
+        TableStyle([
+            (
+                "GRID",
+                (0, 0),
+                (-1, -1),
+                0.5,
+                colors.grey
+            ),
+            (
+                "BACKGROUND",
+                (0, 0),
+                (0, -1),
+                colors.lightgrey
+            ),
+            (
+                "FONTNAME",
+                (0, 0),
+                (0, -1),
+                "Helvetica-Bold"
+            ),
+            (
+                "VALIGN",
+                (0, 0),
+                (-1, -1),
+                "TOP"
+            ),
+            (
+                "PADDING",
+                (0, 0),
+                (-1, -1),
+                6
+            )
+        ])
+    )
+
+    story.append(basic_table)
+
+    story.append(Spacer(1, 12))
+
+    # =====================================================
+    # DEMAND ANALYSIS
+    # =====================================================
+
+    story.append(
+        Paragraph(
+            "<b>2. Demand Analysis</b>",
+            styles["Heading2"]
+        )
+    )
+
+    demand_data = [
+        ["Metric", "Value"],
+
+        [
+            "Predicted Demand",
+            f"{result['adjusted_demand']:.2f} units"
+        ],
+
+        [
+            "Model Forecast",
+            f"{demand.get('forecast', 0):.2f} units"
+        ],
+
+        [
+            "MAE",
+            f"{demand.get('mae', 0):.2f}"
+        ],
+
+        [
+            "RMSE",
+            f"{demand.get('rmse', 0):.2f}"
+        ]
+    ]
+
+    demand_table = Table(
+        demand_data,
+        colWidths=[
+            70 * mm,
+            100 * mm
+        ]
+    )
+
+    demand_table.setStyle(
+        TableStyle([
+            (
+                "GRID",
+                (0, 0),
+                (-1, -1),
+                0.5,
+                colors.grey
+            ),
+            (
+                "BACKGROUND",
+                (0, 0),
+                (-1, 0),
+                colors.lightgrey
+            ),
+            (
+                "FONTNAME",
+                (0, 0),
+                (-1, 0),
+                "Helvetica-Bold"
+            ),
+            (
+                "PADDING",
+                (0, 0),
+                (-1, -1),
+                6
+            )
+        ])
+    )
+
+    story.append(demand_table)
+
+    story.append(Spacer(1, 12))
+
+    # =====================================================
+    # INVENTORY ANALYSIS
+    # =====================================================
+
+    story.append(
+        Paragraph(
+            "<b>3. Inventory Analysis</b>",
+            styles["Heading2"]
+        )
+    )
+
+    inventory_data = [
+        ["Metric", "Value"],
+
+        [
+            "Current Inventory",
+            str(inventory["current_inventory"])
+        ],
+
+        [
+            "Predicted Demand",
+            str(inventory["predicted_demand"])
+        ],
+
+        [
+            "Safety Stock",
+            f"{inventory['safety_stock']:.2f}"
+        ],
+
+        [
+            "Lead-Time Demand",
+            f"{inventory['lead_time_demand']:.2f}"
+        ],
+
+        [
+            "Reorder Point",
+            f"{inventory['reorder_point']:.2f}"
+        ],
+
+        [
+            "Stockout Risk",
+            str(inventory["stockout_risk"])
+        ],
+
+        [
+            "Recommended Order",
+            f"{inventory['recommended_order']} units"
+        ]
+    ]
+
+    inventory_table = Table(
+        inventory_data,
+        colWidths=[
+            70 * mm,
+            100 * mm
+        ]
+    )
+
+    inventory_table.setStyle(
+        TableStyle([
+            (
+                "GRID",
+                (0, 0),
+                (-1, -1),
+                0.5,
+                colors.grey
+            ),
+            (
+                "BACKGROUND",
+                (0, 0),
+                (-1, 0),
+                colors.lightgrey
+            ),
+            (
+                "FONTNAME",
+                (0, 0),
+                (-1, 0),
+                "Helvetica-Bold"
+            ),
+            (
+                "PADDING",
+                (0, 0),
+                (-1, -1),
+                6
+            )
+        ])
+    )
+
+    story.append(inventory_table)
+
+    story.append(Spacer(1, 12))
+
+    # =====================================================
+    # SUPPLIER ANALYSIS
+    # =====================================================
+
+    story.append(
+        Paragraph(
+            "<b>4. Supplier Analysis</b>",
+            styles["Heading2"]
+        )
+    )
+
+    supplier_rows = [
+        [
+            "Supplier",
+            "Unit Cost",
+            "Lead Time",
+            "Reliability",
+            "Risk Score",
+            "Risk"
+        ]
+    ]
+
+    for item in result.get("suppliers", []):
+
+        supplier_rows.append([
+            str(item.get("supplier", "")),
+
+            f"₹{item.get('unit_cost', 0):.2f}",
+
+            f"{item.get('lead_time', 0)} days",
+
+            f"{item.get('reliability', 0) * 100:.2f}%",
+
+            f"{item.get('risk_score', 0):.2f}",
+
+            str(item.get("risk_level", ""))
+        ])
+
+    if len(supplier_rows) > 1:
+
+        supplier_table = Table(
+            supplier_rows,
+            repeatRows=1,
+            colWidths=[
+                27 * mm,
+                27 * mm,
+                25 * mm,
+                30 * mm,
+                28 * mm,
+                25 * mm
+            ]
+        )
+
+        supplier_table.setStyle(
+            TableStyle([
+                (
+                    "GRID",
+                    (0, 0),
+                    (-1, -1),
+                    0.4,
+                    colors.grey
+                ),
+                (
+                    "BACKGROUND",
+                    (0, 0),
+                    (-1, 0),
+                    colors.lightgrey
+                ),
+                (
+                    "FONTNAME",
+                    (0, 0),
+                    (-1, 0),
+                    "Helvetica-Bold"
+                ),
+                (
+                    "FONTSIZE",
+                    (0, 0),
+                    (-1, -1),
+                    7
+                ),
+                (
+                    "VALIGN",
+                    (0, 0),
+                    (-1, -1),
+                    "TOP"
+                ),
+                (
+                    "PADDING",
+                    (0, 0),
+                    (-1, -1),
+                    4
+                )
+            ])
+        )
+
+        story.append(supplier_table)
+
+    story.append(Spacer(1, 5))
+
+    story.append(
+        Paragraph(
+            "Reliability is represented using the "
+            "dataset-derived stockout-rate proxy.",
+            styles["Normal"]
+        )
+    )
+
+    story.append(Spacer(1, 12))
+
+    # =====================================================
+    # PROCUREMENT
+    # =====================================================
+
+    story.append(
+        Paragraph(
+            "<b>5. Procurement Recommendation</b>",
+            styles["Heading2"]
+        )
+    )
+
+    procurement_data = [
+        ["Metric", "Value"],
+
+        [
+            "Decision",
+            str(
+                procurement.get(
+                    "decision",
+                    "N/A"
+                )
+            )
+        ],
+
+        [
+            "Supplier",
+            str(selected_supplier)
+        ],
+
+        [
+            "Order Quantity",
+            f"{order_quantity} units"
+        ],
+
+        [
+            "Estimated Cost",
+            f"₹{estimated_cost:,.2f}"
+        ],
+
+        [
+            "Reason",
+            str(
+                procurement.get(
+                    "reason",
+                    "N/A"
+                )
+            )
+        ]
+    ]
+
+    procurement_table = Table(
+        procurement_data,
+        colWidths=[
+            70 * mm,
+            100 * mm
+        ]
+    )
+
+    procurement_table.setStyle(
+        TableStyle([
+            (
+                "GRID",
+                (0, 0),
+                (-1, -1),
+                0.5,
+                colors.grey
+            ),
+            (
+                "BACKGROUND",
+                (0, 0),
+                (-1, 0),
+                colors.lightgrey
+            ),
+            (
+                "FONTNAME",
+                (0, 0),
+                (-1, 0),
+                "Helvetica-Bold"
+            ),
+            (
+                "PADDING",
+                (0, 0),
+                (-1, -1),
+                6
+            )
+        ])
+    )
+
+    story.append(procurement_table)
+
+    story.append(Spacer(1, 12))
+
+    # =====================================================
+    # LLM EXPLANATION
+    # =====================================================
+
+    story.append(
+        Paragraph(
+            "<b>6. Llama 3.2 Explanation</b>",
+            styles["Heading2"]
+        )
+    )
+
+    explanation = (
+        str(llm_explanation)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\n", "<br/>")
+    )
+
+    story.append(
+        Paragraph(
+            explanation,
+            styles["Normal"]
+        )
+    )
+
+    story.append(Spacer(1, 12))
+
+    # =====================================================
+    # RAG SOURCES
+    # =====================================================
+
+    story.append(
+        Paragraph(
+            "<b>7. RAG Knowledge Sources</b>",
+            styles["Heading2"]
+        )
+    )
+
+    if retrieved_documents:
+
+        rag_data = [
+            [
+                "Knowledge Source",
+                "Relevance Score"
+            ]
+        ]
+
+        for document in retrieved_documents:
+
+            rag_data.append([
+                document["filename"],
+                f"{document['score']:.3f}"
+            ])
+
+        rag_table = Table(
+            rag_data,
+            colWidths=[
+                110 * mm,
+                60 * mm
+            ]
+        )
+
+        rag_table.setStyle(
+            TableStyle([
+                (
+                    "GRID",
+                    (0, 0),
+                    (-1, -1),
+                    0.5,
+                    colors.grey
+                ),
+                (
+                    "BACKGROUND",
+                    (0, 0),
+                    (-1, 0),
+                    colors.lightgrey
+                ),
+                (
+                    "FONTNAME",
+                    (0, 0),
+                    (-1, 0),
+                    "Helvetica-Bold"
+                ),
+                (
+                    "PADDING",
+                    (0, 0),
+                    (-1, -1),
+                    6
+                )
+            ])
+        )
+
+        story.append(rag_table)
+
+    else:
+
+        story.append(
+            Paragraph(
+                "No RAG knowledge sources were retrieved.",
+                styles["Normal"]
+            )
+        )
+
+    story.append(Spacer(1, 12))
+
+    # =====================================================
+    # HUMAN REVIEW
+    # =====================================================
+
+    story.append(
+        Paragraph(
+            "<b>8. Human Review</b>",
+            styles["Heading2"]
+        )
+    )
+
+    reviewer_comment = (
+        reviewer_comment
+        if reviewer_comment
+        else "No comment provided."
+    )
+
+    reviewer_comment = (
+        str(reviewer_comment)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\n", "<br/>")
+    )
+
+    review_data = [
+        [
+            "Review Status",
+            str(review_status)
+        ],
+
+        [
+            "Reviewer Comment",
+            reviewer_comment
+        ]
+    ]
+
+    review_table = Table(
+        review_data,
+        colWidths=[
+            55 * mm,
+            115 * mm
+        ]
+    )
+
+    review_table.setStyle(
+        TableStyle([
+            (
+                "GRID",
+                (0, 0),
+                (-1, -1),
+                0.5,
+                colors.grey
+            ),
+            (
+                "BACKGROUND",
+                (0, 0),
+                (0, -1),
+                colors.lightgrey
+            ),
+            (
+                "FONTNAME",
+                (0, 0),
+                (0, -1),
+                "Helvetica-Bold"
+            ),
+            (
+                "PADDING",
+                (0, 0),
+                (-1, -1),
+                6
+            )
+        ])
+    )
+
+    story.append(review_table)
+
+    story.append(Spacer(1, 12))
+
+    # =====================================================
+    # RESPONSIBLE AI
+    # =====================================================
+
+    story.append(
+        Paragraph(
+            "<b>9. Responsible AI Notice</b>",
+            styles["Heading2"]
+        )
+    )
+
+    story.append(
+        Paragraph(
+            "This is an academic decision-support simulation. "
+            "The recommendation does not automatically execute "
+            "a real procurement transaction. Human approval is "
+            "required before any real-world action.",
+            styles["Normal"]
+        )
+    )
+
+    doc.build(story)
+
+    buffer.seek(0)
+
+    return buffer.getvalue()
 
 
 # =========================================================
@@ -31,8 +773,8 @@ def load_data():
         "data/raw/supply_chain_dataset1.csv"
     )
 
-    # Convert date
     if "Date" in df.columns:
+
         df["Date"] = pd.to_datetime(
             df["Date"],
             errors="coerce"
@@ -78,7 +820,9 @@ if missing_columns:
         "The dataset is missing required columns:"
     )
 
-    st.write(missing_columns)
+    st.write(
+        missing_columns
+    )
 
     st.stop()
 
@@ -104,21 +848,29 @@ suppliers = {}
 
 for _, row in supplier_summary.iterrows():
 
-    supplier_id = str(row["Supplier_ID"])
+    supplier_id = str(
+        row["Supplier_ID"]
+    )
 
-    # Stockout rate is used as a reliability-risk proxy.
-    # The dataset does not directly provide supplier reliability.
     reliability_proxy = (
-        1 - float(row["stockout_rate"])
+        1 - float(
+            row["stockout_rate"]
+        )
     )
 
     suppliers[supplier_id] = {
 
         "unit_cost":
-            float(row["unit_cost"]),
+            float(
+                row["unit_cost"]
+            ),
 
         "lead_time":
-            int(round(row["lead_time"])),
+            int(
+                round(
+                    row["lead_time"]
+                )
+            ),
 
         "reliability":
             reliability_proxy
@@ -136,11 +888,12 @@ supplier_names = sorted(
 
 with st.sidebar:
 
-    st.title("⚙️ Simulation Control")
+    st.title(
+        "⚙️ Simulation Control"
+    )
 
     st.divider()
 
-    # Product selection using SKU_ID
     product = st.selectbox(
         "📦 Select Product",
         sorted(
@@ -163,13 +916,29 @@ with st.sidebar:
 
     st.divider()
 
-    st.subheader("🧠 AI Stack")
+    st.subheader(
+        "🧠 AI Stack"
+    )
 
-    st.write("🤖 Agents → Decision Logic")
-    st.write("📈 ML → Demand Forecast")
-    st.write("📚 RAG → Policy Retrieval")
-    st.write("🧠 Llama 3.2 → Explanation")
-    st.write("👤 Human → Final Review")
+    st.write(
+        "🤖 Agents → Decision Logic"
+    )
+
+    st.write(
+        "📈 ML → Demand Forecast"
+    )
+
+    st.write(
+        "📚 RAG → Policy Retrieval"
+    )
+
+    st.write(
+        "🧠 Llama 3.2 → Explanation"
+    )
+
+    st.write(
+        "👤 Human → Final Review"
+    )
 
     st.divider()
 
@@ -186,7 +955,9 @@ with st.sidebar:
 # HEADER
 # =========================================================
 
-st.title("🚚 SupplyChain-Swarm")
+st.title(
+    "🚚 SupplyChain-Swarm"
+)
 
 st.subheader(
     "LLM-Powered Agentic AI Supply Chain "
@@ -194,9 +965,10 @@ st.subheader(
 )
 
 st.write(
-    "An intelligent multi-agent system for demand forecasting, "
-    "inventory analysis, supplier risk evaluation, procurement "
-    "recommendations, RAG-based knowledge retrieval, and local "
+    "An intelligent multi-agent system for demand "
+    "forecasting, inventory analysis, supplier risk "
+    "evaluation, procurement recommendations, "
+    "RAG-based knowledge retrieval, and local "
     "LLM-generated explanations."
 )
 
@@ -213,39 +985,39 @@ st.divider()
 # =========================================================
 
 product_data = data[
-    data["SKU_ID"].astype(str) == str(product)
+    data["SKU_ID"].astype(str)
+    == str(product)
 ].copy()
 
 
-# Sort by date for time-series forecasting
 product_data = product_data.sort_values(
     by="Date"
-).reset_index(drop=True)
+).reset_index(
+    drop=True
+)
 
 
 # =========================================================
 # SCENARIO SUPPLIER SELECTION
 # =========================================================
 
-# Use actual suppliers from the dataset.
-# No artificial Supplier_A/B/C names are created.
-
 delay_supplier = None
+
 cost_supplier = None
 
 
 if supplier_names:
 
-    # Supplier with shortest average lead time
     delay_supplier = min(
         supplier_names,
-        key=lambda name: suppliers[name]["lead_time"]
+        key=lambda name:
+            suppliers[name]["lead_time"]
     )
 
-    # Supplier with lowest average unit cost
     cost_supplier = min(
         supplier_names,
-        key=lambda name: suppliers[name]["unit_cost"]
+        key=lambda name:
+            suppliers[name]["unit_cost"]
     )
 
 
@@ -253,7 +1025,9 @@ if supplier_names:
 # SCENARIO ENVIRONMENT
 # =========================================================
 
-environment = SupplyChainEnvironment()
+environment = (
+    SupplyChainEnvironment()
+)
 
 
 if scenario == "Demand Shock":
@@ -308,7 +1082,9 @@ elif scenario == "Combined Crisis":
 # RUN AGENTIC SYSTEM
 # =========================================================
 
-coordinator = CoordinatorAgent()
+coordinator = (
+    CoordinatorAgent()
+)
 
 
 try:
@@ -331,10 +1107,13 @@ except Exception as e:
 if result is None:
 
     st.error(
-        "The Agentic AI system could not complete the simulation."
+        "The Agentic AI system could not "
+        "complete the simulation."
     )
 
-    st.code(system_error)
+    st.code(
+        system_error
+    )
 
     st.stop()
 
@@ -343,25 +1122,36 @@ if result is None:
 # EXTRACT RESULTS
 # =========================================================
 
-inventory = result["inventory"]
-
-procurement = result["procurement"]
-
-
-# ProcurementAgent returns "supplier"
-selected_supplier = procurement.get(
-    "supplier",
-    "N/A"
+inventory = (
+    result["inventory"]
 )
 
-order_quantity = procurement.get(
-    "quantity",
-    0
+procurement = (
+    result["procurement"]
 )
 
-estimated_cost = procurement.get(
-    "estimated_cost",
-    0
+
+selected_supplier = (
+    procurement.get(
+        "supplier",
+        "N/A"
+    )
+)
+
+
+order_quantity = (
+    procurement.get(
+        "quantity",
+        0
+    )
+)
+
+
+estimated_cost = (
+    procurement.get(
+        "estimated_cost",
+        0
+    )
 )
 
 
@@ -371,21 +1161,22 @@ estimated_cost = procurement.get(
 
 try:
 
-    llm_explanation = explain_supply_chain(
-        result
+    llm_explanation = (
+        explain_supply_chain(
+            result
+        )
     )
 
     llm_ok = True
 
     llm_error = ""
 
-
 except Exception as e:
 
     llm_explanation = (
-        "The local LLM could not generate an explanation. "
-        "Please start Ollama and make sure "
-        "llama3.2:3b is available."
+        "The local LLM could not generate "
+        "an explanation. Please start Ollama "
+        "and make sure llama3.2:3b is available."
     )
 
     llm_ok = False
@@ -410,13 +1201,14 @@ rag_query = (
 
 try:
 
-    retrieved_documents = retrieve_documents(
-        rag_query,
-        top_k=2
+    retrieved_documents = (
+        retrieve_documents(
+            rag_query,
+            top_k=2
+        )
     )
 
     rag_error = ""
-
 
 except Exception as e:
 
@@ -460,6 +1252,49 @@ scenario_descriptions = {
 
 
 # =========================================================
+# HUMAN REVIEW STATE
+# =========================================================
+
+review_key = (
+    f"{product}|"
+    f"{scenario}|"
+    f"{result.get('adjusted_demand', 0)}|"
+    f"{order_quantity}|"
+    f"{selected_supplier}|"
+    f"{estimated_cost}"
+)
+
+
+if (
+    st.session_state.get(
+        "review_key"
+    )
+    != review_key
+):
+
+    st.session_state.review_key = (
+        review_key
+    )
+
+    st.session_state.review_status = (
+        "Pending"
+    )
+
+    st.session_state.reviewer_comment = (
+        ""
+    )
+
+
+review_status = (
+    st.session_state.review_status
+)
+
+reviewer_comment = (
+    st.session_state.reviewer_comment
+)
+
+
+# =========================================================
 # CURRENT SCENARIO
 # =========================================================
 
@@ -478,10 +1313,14 @@ st.info(
 # EXECUTIVE OVERVIEW
 # =========================================================
 
-st.header("📊 Executive Overview")
+st.header(
+    "📊 Executive Overview"
+)
 
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4 = (
+    st.columns(4)
+)
 
 
 with col1:
@@ -506,7 +1345,9 @@ with col3:
 
     st.metric(
         "⚠️ Stockout Risk",
-        str(inventory["stockout_risk"])
+        str(
+            inventory["stockout_risk"]
+        )
     )
 
 
@@ -538,13 +1379,14 @@ Estimated Cost: **₹{estimated_cost:,.2f}**
 # TABS
 # =========================================================
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
     [
         "📊 Overview",
         "🤖 AI Intelligence",
         "📦 Inventory",
         "🏭 Suppliers",
-        "⚙️ System"
+        "⚙️ System",
+        "👤 Human Review & Report"
     ]
 )
 
@@ -560,7 +1402,9 @@ with tab1:
     )
 
 
-    flow1, flow2, flow3 = st.columns(3)
+    flow1, flow2, flow3 = (
+        st.columns(3)
+    )
 
 
     with flow1:
@@ -599,7 +1443,9 @@ lead time and reliability proxy.
         )
 
 
-    flow4, flow5, flow6 = st.columns(3)
+    flow4, flow5, flow6 = (
+        st.columns(3)
+    )
 
 
     with flow4:
@@ -745,10 +1591,6 @@ with tab2:
     st.divider()
 
 
-    # =====================================================
-    # RAG
-    # =====================================================
-
     st.subheader(
         "📚 RAG Knowledge Retrieval"
     )
@@ -839,10 +1681,6 @@ with tab2:
                 )
 
 
-    # =====================================================
-    # RAG + LLM
-    # =====================================================
-
     st.subheader(
         "🧠 RAG-Grounded AI Analysis"
     )
@@ -850,9 +1688,11 @@ with tab2:
 
     try:
 
-        rag_answer = answer_with_rag(
-            rag_query,
-            result
+        rag_answer = (
+            answer_with_rag(
+                rag_query,
+                result
+            )
         )
 
         st.write(
@@ -869,10 +1709,6 @@ with tab2:
 
     st.divider()
 
-
-    # =====================================================
-    # RESPONSIBLE AI
-    # =====================================================
 
     st.subheader(
         "🛡️ Responsible AI"
@@ -973,7 +1809,9 @@ with tab3:
     )
 
 
-    a, b, c = st.columns(3)
+    a, b, c = (
+        st.columns(3)
+    )
 
 
     with a:
@@ -1064,7 +1902,9 @@ with tab4:
     )
 
 
-    a, b, c = st.columns(3)
+    a, b, c = (
+        st.columns(3)
+    )
 
 
     with a:
@@ -1106,13 +1946,21 @@ with tab4:
     score_rows = []
 
 
-    for supplier_name, supplier_data in suppliers.items():
+    for supplier_name, supplier_data in (
+        suppliers.items()
+    ):
 
-        cost = supplier_data["unit_cost"]
+        cost = (
+            supplier_data["unit_cost"]
+        )
 
-        lead_time = supplier_data["lead_time"]
+        lead_time = (
+            supplier_data["lead_time"]
+        )
 
-        reliability = supplier_data["reliability"]
+        reliability = (
+            supplier_data["reliability"]
+        )
 
 
         decision_score = (
@@ -1132,13 +1980,19 @@ with tab4:
                 supplier_name,
 
             "Unit Cost":
-                round(cost, 2),
+                round(
+                    cost,
+                    2
+                ),
 
             "Lead Time":
                 lead_time,
 
             "Reliability Proxy":
-                round(reliability * 100, 2),
+                round(
+                    reliability * 100,
+                    2
+                ),
 
             "Decision Score":
                 round(
@@ -1357,7 +2211,9 @@ with tab5:
     )
 
 
-    status1, status2, status3 = st.columns(3)
+    status1, status2, status3 = (
+        st.columns(3)
+    )
 
 
     with status1:
@@ -1405,3 +2261,267 @@ with tab5:
         "simulation. Recommendations are simulated and "
         "must be reviewed by a human before any real-world use."
     )
+
+
+# =========================================================
+# TAB 6 — HUMAN REVIEW & REPORT
+# =========================================================
+
+with tab6:
+
+    st.subheader(
+        "👤 Human Review"
+    )
+
+    st.write(
+        "The AI recommendation must be reviewed by a human "
+        "before the final report is released."
+    )
+
+    # =====================================================
+    # RECOMMENDATION SUMMARY
+    # =====================================================
+
+    review_col1, review_col2, review_col3 = (
+        st.columns(3)
+    )
+
+
+    with review_col1:
+
+        st.metric(
+            "Recommended Order",
+            f"{order_quantity} units"
+        )
+
+
+    with review_col2:
+
+        st.metric(
+            "Supplier",
+            str(selected_supplier)
+        )
+
+
+    with review_col3:
+
+        st.metric(
+            "Estimated Cost",
+            f"₹{estimated_cost:,.2f}"
+        )
+
+
+    st.info(
+        f"""
+**Product / SKU:** {product}
+
+**Scenario:** {scenario}
+
+**Stockout Risk:** {inventory["stockout_risk"]}
+
+**AI Decision:** {
+    procurement.get(
+        "decision",
+        "N/A"
+    )
+}
+"""
+    )
+
+
+    # =====================================================
+    # REVIEW STATUS
+    # =====================================================
+
+    if review_status == "Pending":
+
+        st.warning(
+            "⏳ Review Status: PENDING"
+        )
+
+    elif review_status == "Approved":
+
+        st.success(
+            "✅ Review Status: APPROVED"
+        )
+
+    elif review_status == "Rejected":
+
+        st.error(
+            "❌ Review Status: REJECTED"
+        )
+
+
+    # =====================================================
+    # REVIEWER COMMENT
+    # =====================================================
+
+    reviewer_comment_input = st.text_area(
+        "📝 Reviewer Comment",
+        value=reviewer_comment,
+        placeholder=(
+            "Enter a reason for approving or "
+            "rejecting this recommendation."
+        ),
+        height=120
+    )
+
+
+    st.session_state.reviewer_comment = (
+        reviewer_comment_input
+    )
+
+
+    # =====================================================
+    # APPROVE / REJECT BUTTONS
+    # =====================================================
+
+    approve_col, reject_col = (
+        st.columns(2)
+    )
+
+
+    with approve_col:
+
+        if st.button(
+            "✅ Approve Recommendation",
+            type="primary",
+            use_container_width=True
+        ):
+
+            st.session_state.review_status = (
+                "Approved"
+            )
+
+            st.session_state.reviewer_comment = (
+                reviewer_comment_input
+            )
+
+            st.rerun()
+
+
+    with reject_col:
+
+        if st.button(
+            "❌ Reject Recommendation",
+            use_container_width=True
+        ):
+
+            st.session_state.review_status = (
+                "Rejected"
+            )
+
+            st.session_state.reviewer_comment = (
+                reviewer_comment_input
+            )
+
+            st.rerun()
+
+
+    # =====================================================
+    # APPROVED → PDF
+    # =====================================================
+
+    if review_status == "Approved":
+
+        st.divider()
+
+        st.subheader(
+            "📄 Approved Decision Report"
+        )
+
+        st.success(
+            "The recommendation has been approved. "
+            "The final PDF report is now available."
+        )
+
+
+        try:
+
+            pdf_bytes = generate_pdf_report(
+
+                result=result,
+
+                product=product,
+
+                scenario=scenario,
+
+                selected_supplier=selected_supplier,
+
+                order_quantity=order_quantity,
+
+                estimated_cost=estimated_cost,
+
+                llm_explanation=llm_explanation,
+
+                retrieved_documents=retrieved_documents,
+
+                review_status=review_status,
+
+                reviewer_comment=reviewer_comment
+
+            )
+
+
+            filename = (
+                f"SupplyChain_Report_"
+                f"{product}_"
+                f"{scenario.replace(' ', '_')}.pdf"
+            )
+
+
+            st.download_button(
+                label="📥 Download Approved PDF Report",
+                data=pdf_bytes,
+                file_name=filename,
+                mime="application/pdf",
+                use_container_width=True
+            )
+
+
+        except Exception as e:
+
+            st.error(
+                "PDF report could not be generated."
+            )
+
+            st.code(
+                str(e)
+            )
+
+            st.info(
+                "Make sure ReportLab is installed:"
+                "\npip install reportlab"
+            )
+
+
+    # =====================================================
+    # REJECTED
+    # =====================================================
+
+    elif review_status == "Rejected":
+
+        st.divider()
+
+        st.error(
+            "❌ Recommendation rejected."
+        )
+
+        st.info(
+            "The approved PDF report is not available "
+            "because the recommendation was rejected."
+        )
+
+
+    # =====================================================
+    # PENDING
+    # =====================================================
+
+    else:
+
+        st.divider()
+
+        st.info(
+            "Approve the recommendation to unlock "
+            "the final PDF report."
+        )

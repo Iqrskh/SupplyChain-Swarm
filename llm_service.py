@@ -1,23 +1,63 @@
-import ollama
+from google import genai
 import json
+import os
+import time
 
+API_KEY = os.getenv("GEMINI_API_KEY")
 
-MODEL = "llama3.2:3b"
+if not API_KEY:
+    raise RuntimeError("GEMINI_API_KEY is not set.")
+
+client = genai.Client(api_key=API_KEY)
+
+# Try models in this order
+MODELS = [
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
+]
 
 
 def ask_llm(prompt):
+    """
+    Try available Gemini models until one responds.
+    """
 
-    response = ollama.chat(
-        model=MODEL,
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
+    errors = []
+
+    for model in MODELS:
+
+        try:
+            print(f"Trying Gemini model: {model}")
+
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt
+            )
+
+            if response.text:
+                print(f"Gemini model working: {model}")
+                return response.text
+
+        except Exception as e:
+
+            error = str(e)
+            errors.append(f"{model}: {error}")
+
+            # Try the next model for temporary availability errors
+            if "503" in error or "UNAVAILABLE" in error:
+                continue
+
+            # Try another model for other model-specific errors too
+            continue
+
+    return (
+        "Gemini is temporarily unavailable.\n\n"
+        "Models attempted:\n"
+        + "\n".join(errors)
     )
-
-    return response["message"]["content"]
 
 
 def explain_supply_chain(result):
@@ -45,11 +85,7 @@ RESPONSIBLE AI RULES:
 
 SUPPLYCHAIN-SWARM RESULT:
 
-{json.dumps(
-    result,
-    indent=2,
-    default=str
-)}
+{json.dumps(result, indent=2, default=str)}
 
 Provide a concise explanation using these sections:
 
