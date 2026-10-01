@@ -8,6 +8,7 @@ from simulation.environment import SupplyChainEnvironment
 
 from llm_service import explain_supply_chain
 from rag_service import retrieve_documents, answer_with_rag
+from blockchain.blockchain_service import record_decision
 
 
 # =========================================================
@@ -2381,13 +2382,36 @@ with tab6:
     )
 
 
-    with approve_col:
+with approve_col:
 
-        if st.button(
-            "✅ Approve Recommendation",
-            type="primary",
-            use_container_width=True
-        ):
+    if st.button(
+        "✅ Approve Recommendation",
+        type="primary",
+        use_container_width=True
+    ):
+
+        try:
+
+            recommendation_id = (
+                f"SC-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+            )
+
+            blockchain_result = dict(result)
+            blockchain_result["sku"] = str(product)
+
+            blockchain_record = record_decision(
+                recommendation_id,
+                blockchain_result,
+                "Approved"
+            )
+
+            st.session_state.blockchain_record = (
+                blockchain_record
+            )
+
+            st.session_state.recommendation_id = (
+                recommendation_id
+            )
 
             st.session_state.review_status = (
                 "Approved"
@@ -2397,25 +2421,22 @@ with tab6:
                 reviewer_comment_input
             )
 
-            st.rerun()
-
-
-    with reject_col:
-
-        if st.button(
-            "❌ Reject Recommendation",
-            use_container_width=True
-        ):
-
-            st.session_state.review_status = (
-                "Rejected"
-            )
-
-            st.session_state.reviewer_comment = (
-                reviewer_comment_input
+            st.success(
+                "✅ Recommendation approved and "
+                "recorded on blockchain."
             )
 
             st.rerun()
+
+        except Exception as e:
+
+            st.error(
+                "❌ Blockchain recording failed."
+            )
+
+            st.code(
+                str(e)
+            )
 
 
     # =====================================================
@@ -2525,3 +2546,65 @@ with tab6:
             "Approve the recommendation to unlock "
             "the final PDF report."
         )
+# =====================================================
+# BLOCKCHAIN AUDIT RECORD
+# =====================================================
+
+if review_status == "Approved":
+
+    blockchain_record = st.session_state.get(
+        "blockchain_record"
+    )
+
+    if blockchain_record:
+
+        st.divider()
+
+        st.subheader(
+            "🔗 Blockchain Audit Record"
+        )
+
+        st.success(
+            "✅ Approved recommendation recorded "
+            "on the local blockchain."
+        )
+
+        blockchain_col1, blockchain_col2 = st.columns(2)
+
+        with blockchain_col1:
+
+            st.write(
+                "**Contract Address**"
+            )
+
+            st.code(
+                blockchain_record["contract_address"]
+            )
+
+            st.write(
+                "**Block Number**"
+            )
+
+            st.code(
+                str(
+                    blockchain_record["block_number"]
+                )
+            )
+
+        with blockchain_col2:
+
+            st.write(
+                "**Transaction Hash**"
+            )
+
+            st.code(
+                blockchain_record["transaction_hash"]
+            )
+
+            st.write(
+                "**Recommendation Hash**"
+            )
+
+            st.code(
+                blockchain_record["recommendation_hash"]
+            )

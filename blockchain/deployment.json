@@ -1,0 +1,230 @@
+{
+  "contract_address": "0x2Ddc5AC928222EC5b28264c475118a98B069b75a",
+  "abi": [
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "recommendationId",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "sku",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "supplier",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "humanDecision",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        }
+      ],
+      "name": "DecisionRecorded",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "decisionCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "decisions",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "recommendationId",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "sku",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "supplier",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "orderQuantity",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "estimatedCost",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "humanDecision",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "recommendationHash",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        }
+      ],
+      "name": "getDecision",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "id",
+              "type": "uint256"
+            },
+            {
+              "internalType": "string",
+              "name": "recommendationId",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "sku",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "supplier",
+              "type": "string"
+            },
+            {
+              "internalType": "uint256",
+              "name": "orderQuantity",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "estimatedCost",
+              "type": "uint256"
+            },
+            {
+              "internalType": "string",
+              "name": "humanDecision",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "recommendationHash",
+              "type": "string"
+            },
+            {
+              "internalType": "uint256",
+              "name": "timestamp",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct SupplyChainAudit.Decision",
+          "name": "",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "recommendationId",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "sku",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "supplier",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "orderQuantity",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "estimatedCost",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "humanDecision",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "recommendationHash",
+          "type": "string"
+        }
+      ],
+      "name": "recordDecision",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "deployer": "0x673D8ff7ae2a114F6E8A9560F8b95E664ee5D23a"
+}
